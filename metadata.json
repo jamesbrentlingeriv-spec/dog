@@ -1,0 +1,6 @@
+{
+  "name": "Barkshire — 3D Open-World Dog Life Simulator",
+  "description": "Explore a detailed 3D town and expansive park as a dog. Upload animated GLB dog breeds with realistic breed-specific physics, sniff out hidden treats, mark hydrants, get belly rubs from townspeople, and experience dynamic weather.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
