@@ -74,11 +74,13 @@ export interface SocialReward {
   equipped: boolean;
 }
 
+export type StoreInteriorId = 'pet_store' | 'supermarket' | 'bakery';
+
 export interface NearbyPrompt {
   key: string;
   label: string;
   sublabel?: string;
-  action: 'pet' | 'pee_mark' | 'eat_treat';
+  action: 'pet' | 'pee_mark' | 'eat_treat' | 'enter_store' | 'exit_store';
 }
 
 export interface SpeechBubbleData {
@@ -200,7 +202,7 @@ export const BUILTIN_BREEDS: DogBreedConfig[] = [
     subtitle: 'Athletic photorealistic GLB with 100+ mocap animations',
     source: 'glb',
     glbUrl: '/models/dogs/animated_pitbull_dog.glb',
-    forwardRotationDeg: 180,
+    forwardRotationDeg: 0,
     clipMapping: {
       idle: 'idle 50',
       walk: 'walk_fwd 29',
@@ -309,6 +311,139 @@ export const BUILTIN_BREEDS: DogBreedConfig[] = [
       turnRate: 9.4,
       targetHeight: 0.42,
       barkPitch: 1.48,
+    },
+  },
+  {
+    id: 'chihuahua',
+    name: 'Fawn Chihuahua',
+    subtitle: 'Pint-sized dynamo with oversized bat ears & lightning turns',
+    source: 'glb',
+    glbUrl: '/models/dogs/chihuahua.glb',
+    forwardRotationDeg: 0,
+    clipMapping: {
+      idle: 'idle',
+      walk: 'walk',
+      run: 'run',
+      jump: 'jump',
+      action: 'sniff',
+      sniff: 'sniff',
+      bark: 'bark',
+      bellyRub: 'bellyRub',
+    },
+    physics: {
+      ...PHYSICS_PRESETS.agile_small,
+      walkSpeed: 3.7,
+      sprintSpeed: 8.2,
+      turnRate: 10.4,
+      jumpVelocity: 6.2,
+      targetHeight: 0.28,
+      barkPitch: 1.85,
+    },
+  },
+  {
+    id: 'cocker_spaniel',
+    name: 'Black Cocker Spaniel',
+    subtitle: 'Glossy wavy coat, long pendulous ears & joyful park stride',
+    source: 'glb',
+    glbUrl: '/models/dogs/cocker_spaniel.glb',
+    forwardRotationDeg: 0,
+    clipMapping: {
+      idle: 'idle',
+      walk: 'walk',
+      run: 'run',
+      jump: 'jump',
+      action: 'sniff',
+      sniff: 'sniff',
+      bark: 'bark',
+      bellyRub: 'bellyRub',
+    },
+    physics: {
+      ...PHYSICS_PRESETS.balanced_medium,
+      walkSpeed: 3.6,
+      sprintSpeed: 8.3,
+      turnRate: 7.8,
+      targetHeight: 0.42,
+      barkPitch: 1.18,
+    },
+  },
+  {
+    id: 'dapple_dachshund',
+    name: 'Dapple Dachshund',
+    subtitle: 'Silver-black dapple coat, warm tan paws, floppy hound ears & master sniffer',
+    source: 'glb',
+    glbUrl: '/models/dogs/dapple_dachshund.glb',
+    forwardRotationDeg: 0,
+    clipMapping: {
+      idle: 'idle',
+      walk: 'walk',
+      run: 'run',
+      jump: 'jump',
+      action: 'sniff',
+      sniff: 'sniff',
+      bark: 'bark',
+      bellyRub: 'bellyRub',
+    },
+    physics: {
+      ...PHYSICS_PRESETS.agile_small,
+      walkSpeed: 3.3,
+      sprintSpeed: 7.3,
+      turnRate: 9.8,
+      jumpVelocity: 5.5,
+      targetHeight: 0.31,
+      barkPitch: 1.55,
+    },
+  },
+  {
+    id: 'shih_tzu',
+    name: 'Gold & White Shih Tzu',
+    subtitle: 'Fluffy chrysanthemum face, plumed tail & royal town charm',
+    source: 'glb',
+    glbUrl: '/models/dogs/shih_tzu.glb',
+    forwardRotationDeg: 0,
+    clipMapping: {
+      idle: 'idle',
+      walk: 'walk',
+      run: 'run',
+      jump: 'jump',
+      action: 'sniff',
+      sniff: 'sniff',
+      bark: 'bark',
+      bellyRub: 'bellyRub',
+    },
+    physics: {
+      ...PHYSICS_PRESETS.agile_small,
+      walkSpeed: 3.2,
+      sprintSpeed: 7.1,
+      turnRate: 9.2,
+      targetHeight: 0.30,
+      barkPitch: 1.62,
+    },
+  },
+  {
+    id: 'yorkshire_terrier',
+    name: 'Yorkshire Terrier',
+    subtitle: 'Silky golden-tan & steel-blue toy terrier with peppy zoomies',
+    source: 'glb',
+    glbUrl: '/models/dogs/yorkshire_terrier.glb',
+    forwardRotationDeg: 0,
+    clipMapping: {
+      idle: 'idle',
+      walk: 'walk',
+      run: 'run',
+      jump: 'jump',
+      action: 'sniff',
+      sniff: 'sniff',
+      bark: 'bark',
+      bellyRub: 'bellyRub',
+    },
+    physics: {
+      ...PHYSICS_PRESETS.agile_small,
+      walkSpeed: 3.6,
+      sprintSpeed: 8.0,
+      turnRate: 10.2,
+      jumpVelocity: 6.0,
+      targetHeight: 0.26,
+      barkPitch: 1.80,
     },
   },
 ];

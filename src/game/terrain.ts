@@ -79,6 +79,34 @@ export function groundHeightAt(x: number, z: number): number {
   return parkHill + rimHeight;
 }
 
+/**
+ * Exact walkable surface height including raised stone plazas, sidewalks, and asphalt roads,
+ * so dogs, NPCs, and ground marks rest flush on top of town pavement without sinking.
+ */
+export function surfaceHeightAt(x: number, z: number): number {
+  let y = groundHeightAt(x, z);
+  // Town Square Circular Plaza Stone at (-22, -8), radius ~14.0, top y = 0.17
+  if (Math.hypot(x - -22, z - -8) < 14.1) {
+    y = Math.max(y, 0.17);
+  }
+  // Park Central Fountain Plaza Stone at (18, -14), radius ~10.4, top y = ground + 0.14
+  if (Math.hypot(x - 18, z - -14) < 10.5) {
+    y = Math.max(y, groundHeightAt(18, -14) + 0.14);
+  }
+  // Main Street Sidewalks at x = -28.8 and -15.2, width 4.0, z in [-60, 52], top y = 0.15
+  if ((Math.abs(x - -28.8) < 2.05 || Math.abs(x - -15.2) < 2.05) && z > -60.2 && z < 52.2) {
+    y = Math.max(y, 0.15);
+  }
+  // Main Street & Cross Street Asphalt, top y = 0.075..0.08
+  if (Math.abs(x - -22) < 4.85 && z > -61.2 && z < 53.2) {
+    y = Math.max(y, 0.072);
+  }
+  if (Math.abs(z - -8) < 4.15 && x > -67.2 && x < 7.2) {
+    y = Math.max(y, 0.082);
+  }
+  return y;
+}
+
 export function getZoneName(x: number, z: number): string {
   if (isOnBridge(x, z)) return 'Willow Pond Bridge';
   if (Math.hypot(x - POND_CENTER_X, z - POND_CENTER_Z) < 22) return 'Duck Pond Shores';

@@ -6,6 +6,23 @@ export class DogAudioEngine {
   private rainGain: GainNode | null = null;
   private rainSource: AudioBufferSourceNode | null = null;
   private stepTimer = 0;
+  private stepParity = 0;
+  private wasMoving = false;
+  private noiseBuffer: AudioBuffer | null = null;
+
+  private getNoiseBuffer(ctx: AudioContext): AudioBuffer {
+    if (this.noiseBuffer && this.noiseBuffer.sampleRate === ctx.sampleRate) {
+      return this.noiseBuffer;
+    }
+    const len = Math.floor(ctx.sampleRate * 0.12);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    this.noiseBuffer = buf;
+    return buf;
+  }
 
   private ensureContext(): AudioContext | null {
     if (this.muted) return null;
@@ -124,34 +141,93 @@ export class DogAudioEngine {
   }
 
   public playFootstep(speedRatio: number, onPavement: boolean, dt: number) {
-    if (speedRatio < 0.12) {
+    if (speedRatio < 0.06) {
       this.stepTimer = 0;
+      this.wasMoving = false;
       return;
     }
-    const interval = Math.max(0.13, 0.34 - speedRatio * 0.19);
-    this.stepTimer += dt;
+    // Realistic quadruped cadence: crisp alternating pawfalls from slow walk to fast gallop
+    const interval = Math.max(0.11, 0.29 - speedRatio * 0.16);
+    if (!this.wasMoving) {
+      this.wasMoving = true;
+      this.stepTimer = interval; // Fire first pawstep immediately on movement start
+    } else {
+      this.stepTimer += dt;
+    }
     if (this.stepTimer < interval) return;
-    this.stepTimer = 0;
+    this.stepTimer -= interval;
+    this.stepParity = (this.stepParity + 1) % 4;
 
     const ctx = this.ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
+    const intensity = Math.min(1.0, 0.48 + speedRatio * 0.58);
+    // Subtle per-paw tonal variation (front vs hind paws)
+    const pawTone = this.stepParity < 2 ? 1.08 : 0.92;
 
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = onPavement ? 'triangle' : 'sine';
-    const startFreq = onPavement ? 280 + Math.random() * 80 : 120 + Math.random() * 40;
-    osc.frequency.setValueAtTime(startFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(45, now + 0.045);
+    if (onPavement) {
+      // Layer 1: Soft padded paw thump on stone/concrete
+      const padOsc = ctx.createOscillator();
+      const padGain = ctx.createGain();
+      padOsc.type = 'triangle';
+      padOsc.frequency.setValueAtTime((165 + Math.random() * 25) * pawTone, now);
+      padOsc.frequency.exponentialRampToValueAtTime(52, now + 0.045);
+      padGain.gain.setValueAtTime(0.001, now);
+      padGain.gain.linearRampToValueAtTime(0.14 * intensity, now + 0.004);
+      padGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.055);
+      padOsc.connect(padGain);
+      padGain.connect(ctx.destination);
+      padOsc.start(now);
+      padOsc.stop(now + 0.06);
 
-    const vol = (onPavement ? 0.032 : 0.024) * Math.min(1, speedRatio + 0.3);
-    gain.gain.setValueAtTime(vol, now);
-    gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.05);
+      // Layer 2: Crisp dog-claw click on concrete/cobblestone
+      const clickSrc = ctx.createBufferSource();
+      clickSrc.buffer = this.getNoiseBuffer(ctx);
+      const clickFilter = ctx.createBiquadFilter();
+      clickFilter.type = 'bandpass';
+      clickFilter.frequency.setValueAtTime((2400 + Math.random() * 650) * pawTone, now);
+      clickFilter.Q.value = 3.2;
+      const clickGain = ctx.createGain();
+      clickGain.gain.setValueAtTime(0.001, now);
+      clickGain.gain.linearRampToValueAtTime(0.16 * intensity, now + 0.002);
+      clickGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.024);
+      clickSrc.connect(clickFilter);
+      clickFilter.connect(clickGain);
+      clickGain.connect(ctx.destination);
+      clickSrc.start(now);
+      clickSrc.stop(now + 0.028);
+    } else {
+      // Layer 1: Soft earthy paw thud on grass/soil
+      const thudOsc = ctx.createOscillator();
+      const thudGain = ctx.createGain();
+      thudOsc.type = 'sine';
+      thudOsc.frequency.setValueAtTime((115 + Math.random() * 20) * pawTone, now);
+      thudOsc.frequency.exponentialRampToValueAtTime(38, now + 0.06);
+      thudGain.gain.setValueAtTime(0.001, now);
+      thudGain.gain.linearRampToValueAtTime(0.13 * intensity, now + 0.008);
+      thudGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.068);
+      thudOsc.connect(thudGain);
+      thudGain.connect(ctx.destination);
+      thudOsc.start(now);
+      thudOsc.stop(now + 0.072);
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.055);
+      // Layer 2: Soft grass-blade brush rustle
+      const rustleSrc = ctx.createBufferSource();
+      rustleSrc.buffer = this.getNoiseBuffer(ctx);
+      const rustleFilter = ctx.createBiquadFilter();
+      rustleFilter.type = 'bandpass';
+      rustleFilter.frequency.setValueAtTime(1150 + Math.random() * 350, now);
+      rustleFilter.Q.value = 1.1;
+      const rustleGain = ctx.createGain();
+      rustleGain.gain.setValueAtTime(0.001, now);
+      rustleGain.gain.linearRampToValueAtTime(0.095 * intensity, now + 0.01);
+      rustleGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.075);
+      rustleSrc.connect(rustleFilter);
+      rustleFilter.connect(rustleGain);
+      rustleGain.connect(ctx.destination);
+      rustleSrc.start(now);
+      rustleSrc.stop(now + 0.08);
+    }
   }
 
   public playTreatChomp() {

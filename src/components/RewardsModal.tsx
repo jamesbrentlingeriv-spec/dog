@@ -12,7 +12,7 @@ interface RewardsModalProps {
   hydrantsMarked: number;
   totalHydrants: number;
   onToggleEquip: (id: SocialReward['id']) => void;
-  onTeleport: (landmark: 'town' | 'park' | 'pond' | 'gazebo') => void;
+  onTeleport: (landmark: 'town' | 'pet_store' | 'park' | 'pond' | 'gazebo') => void;
 }
 
 export const RewardsModal: React.FC<RewardsModalProps> = ({
@@ -135,10 +135,11 @@ export const RewardsModal: React.FC<RewardsModalProps> = ({
               <MapPin className="w-4 h-4 text-sky-400" />
               Quick Travel Landmarks
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
               {(
                 [
                   ['town', 'Town Square', 'Bakery, Cafe & Hydrants'],
+                  ['pet_store', 'Pet Store', 'Paws & Collars on Main St'],
                   ['park', 'Sunbeam Fountain', 'Central Park Plaza'],
                   ['pond', 'Willow Pond', 'Arched Wooden Bridge'],
                   ['gazebo', 'Oakridge Gazebo', 'Hidden Meadow Treats'],

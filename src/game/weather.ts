@@ -20,56 +20,56 @@ const WEATHER_PRESETS: Record<WeatherMode, WeatherPreset> = {
   sunny: {
     skyColor: new THREE.Color(0x9bc8e8),
     fogColor: new THREE.Color(0xb8d7eb),
-    fogDensity: 0.0052,
+    fogDensity: 0.0046,
     sunColor: new THREE.Color(0xfff1d6),
-    sunIntensity: 2.35,
+    sunIntensity: 1.55,
     sunPos: new THREE.Vector3(48, 68, 36),
     hemiSky: new THREE.Color(0xa6d2f5),
-    hemiGround: new THREE.Color(0x63734a),
-    hemiIntensity: 0.92,
-    exposure: 1.08,
+    hemiGround: new THREE.Color(0x52613e),
+    hemiIntensity: 0.42,
+    exposure: 0.88,
     lampEmissive: 0.2,
     wetRoughnessDelta: 0,
   },
   sunset: {
     skyColor: new THREE.Color(0xd98a5b),
     fogColor: new THREE.Color(0xd4966e),
-    fogDensity: 0.0068,
+    fogDensity: 0.0062,
     sunColor: new THREE.Color(0xff9e54),
-    sunIntensity: 2.15,
+    sunIntensity: 1.45,
     sunPos: new THREE.Vector3(-72, 24, 42),
     hemiSky: new THREE.Color(0xe6a17e),
     hemiGround: new THREE.Color(0x4f4438),
-    hemiIntensity: 0.78,
-    exposure: 1.04,
+    hemiIntensity: 0.38,
+    exposure: 0.86,
     lampEmissive: 1.65,
     wetRoughnessDelta: 0,
   },
   rain: {
     skyColor: new THREE.Color(0x6b7c8c),
     fogColor: new THREE.Color(0x748594),
-    fogDensity: 0.0115,
+    fogDensity: 0.0105,
     sunColor: new THREE.Color(0xc5d4e2),
-    sunIntensity: 0.95,
+    sunIntensity: 0.72,
     sunPos: new THREE.Vector3(24, 52, 28),
     hemiSky: new THREE.Color(0x889cb0),
     hemiGround: new THREE.Color(0x3f4c3d),
-    hemiIntensity: 0.88,
-    exposure: 0.98,
+    hemiIntensity: 0.45,
+    exposure: 0.84,
     lampEmissive: 1.25,
     wetRoughnessDelta: -0.34,
   },
   autumn: {
     skyColor: new THREE.Color(0xa8bfd4),
     fogColor: new THREE.Color(0xc4cfc8),
-    fogDensity: 0.0066,
+    fogDensity: 0.006,
     sunColor: new THREE.Color(0xffe1a8),
-    sunIntensity: 1.85,
+    sunIntensity: 1.32,
     sunPos: new THREE.Vector3(56, 44, -26),
     hemiSky: new THREE.Color(0xb8cfe0),
     hemiGround: new THREE.Color(0x7a613c),
-    hemiIntensity: 0.85,
-    exposure: 1.05,
+    hemiIntensity: 0.4,
+    exposure: 0.87,
     lampEmissive: 0.55,
     wetRoughnessDelta: -0.04,
   },
@@ -171,6 +171,16 @@ export class DynamicWeatherSystem {
     this.leafPoints = new THREE.Points(leafGeo, leafMat);
     this.leafPoints.frustumCulled = false;
     scene.add(this.leafPoints);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+  /** Lets late-streaming assets (GLB buildings, trees, props) join the wet-weather sheen. */
+  public registerWettableMaterial(material: THREE.MeshStandardMaterial) {
+    if (this.baseRoughnesses.has(material)) return;
+    this.baseRoughnesses.set(material, material.roughness);
+    this.wettableMaterials.push(material);
   }
 
   public setMode(mode: WeatherMode) {

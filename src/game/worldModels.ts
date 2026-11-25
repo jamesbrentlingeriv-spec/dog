@@ -102,77 +102,22 @@ const LANDMARK_PROPS: PropSpec[] = [
     yaw: 0.6,
     yOffset: -0.12,
   },
-  // --- Town: treat bags outside the pet shop & supermarket -----------------
+  // --- Park: plant pack garden beds ----------------------------------------
   {
-    file: 'doggy_treats_game_ready_prop.glb',
-    x: -13,
-    z: -53,
-    fitHeight: 0.6,
-    yaw: 0.5,
+    file: 'valars_plant_pack_2.glb',
+    x: 22,
+    z: 36,
+    fitWidth: 13,
+    yaw: 0.4,
+    compact: true,
   },
   {
-    file: 'doggy_treats_game_ready_prop.glb',
-    x: -52.4,
-    z: 34.5,
-    fitHeight: 0.7,
-    yaw: -0.4,
-  },
-  {
-    file: 'doggy_treats_game_ready_prop.glb',
-    x: -12.5,
-    z: -18,
-    fitHeight: 0.55,
-    yaw: 1.2,
-  },
-  {
-    file: 'doggy_treats_game_ready_prop.glb',
-    x: 26,
-    z: -4,
-    fitHeight: 0.6,
-    yaw: -0.8,
-  },
-  {
-    file: 'doggy_treats_game_ready_prop.glb',
-    x: 9,
-    z: 50,
-    fitHeight: 0.5,
-    yaw: 0.3,
-  },
-  // --- Park: novelty poop prank props --------------------------------------
-  {
-    file: 'fake_dog_poop_prank.glb',
-    x: 21,
-    z: 6,
-    fitHeight: 0.2,
-    yaw: 0.6,
-  },
-  {
-    file: 'fake_dog_poop_prank.glb',
-    x: -12.6,
-    z: 12.5,
-    fitHeight: 0.17,
-    yaw: 2.2,
-  },
-  {
-    file: 'fake_dog_poop_prank.glb',
-    x: -4.5,
-    z: -7,
-    fitHeight: 0.18,
-    yaw: 1.1,
-  },
-  {
-    file: 'fake_dog_poop_prank.glb',
-    x: 40,
-    z: -26,
-    fitHeight: 0.22,
-    yaw: -1.4,
-  },
-  {
-    file: 'fake_dog_poop_prank.glb',
-    x: -60,
-    z: 42,
-    fitHeight: 0.19,
-    yaw: 0.7,
+    file: 'valars_plant_pack_2.glb',
+    x: 44,
+    z: 34,
+    fitWidth: 12,
+    yaw: 2.1,
+    compact: true,
   },
   // --- Town: produce crates outside the grocer & supermarket ---------------
   {
@@ -191,62 +136,35 @@ const LANDMARK_PROPS: PropSpec[] = [
     yaw: 0.9,
     compact: true,
   },
+  // --- Town: treat bags outside the pet shop & supermarket -----------------
   {
-    file: 'game_ready_fruit_asset_pack.glb',
-    x: -12.5,
-    z: -32,
-    fitHeight: 1.0,
-    yaw: -0.5,
-    compact: true,
+    file: 'doggy_treats_game_ready_prop.glb',
+    x: -13,
+    z: -53,
+    fitHeight: 0.6,
+    yaw: 0.5,
   },
   {
-    file: 'game_ready_fruit_asset_pack.glb',
-    x: 50,
-    z: -16,
-    fitHeight: 1.1,
-    yaw: 1.7,
-    compact: true,
+    file: 'doggy_treats_game_ready_prop.glb',
+    x: -52.4,
+    z: 34.5,
+    fitHeight: 0.7,
+    yaw: -0.4,
   },
-  // --- Park: plant pack garden beds ----------------------------------------
+  // --- Park: novelty poop prank props --------------------------------------
   {
-    file: 'valars_plant_pack_2.glb',
-    x: 22,
-    z: 36,
-    fitWidth: 13,
-    yaw: 0.4,
-    compact: true,
+    file: 'fake_dog_poop_prank.glb',
+    x: 21,
+    z: 6,
+    fitHeight: 0.2,
+    yaw: 0.6,
   },
   {
-    file: 'valars_plant_pack_2.glb',
-    x: 44,
-    z: 34,
-    fitWidth: 12,
-    yaw: 2.1,
-    compact: true,
-  },
-  {
-    file: 'valars_plant_pack_2.glb',
-    x: -6,
-    z: 8,
-    fitWidth: 9,
-    yaw: -0.3,
-    compact: true,
-  },
-  {
-    file: 'valars_plant_pack_2.glb',
-    x: 14,
-    z: 52,
-    fitWidth: 10,
-    yaw: 1.4,
-    compact: true,
-  },
-  {
-    file: 'valars_plant_pack_2.glb',
-    x: 42,
-    z: 8,
-    fitWidth: 11,
-    yaw: -1.8,
-    compact: true,
+    file: 'fake_dog_poop_prank.glb',
+    x: -12.6,
+    z: 12.5,
+    fitHeight: 0.17,
+    yaw: 2.2,
   },
   // --- Tree groves ---------------------------------------------------------
   {
@@ -274,22 +192,6 @@ const LANDMARK_PROPS: PropSpec[] = [
     compact: true,
   },
   {
-    file: 'oak_trees.glb',
-    x: 32,
-    z: 58,
-    fitWidth: 21,
-    yaw: -0.8,
-    compact: true,
-  },
-  {
-    file: 'oak_trees.glb',
-    x: -54,
-    z: -12,
-    fitWidth: 20,
-    yaw: 0.6,
-    compact: true,
-  },
-  {
     file: 'realistic_fir_trees_pack_lods_gameready.glb',
     x: 74,
     z: 20,
@@ -302,20 +204,6 @@ const LANDMARK_PROPS: PropSpec[] = [
     z: 72,
     fitWidth: 44,
     yaw: 0.2,
-  },
-  {
-    file: 'realistic_fir_trees_pack_lods_gameready.glb',
-    x: 52,
-    z: 64,
-    fitWidth: 42,
-    yaw: 1.3,
-  },
-  {
-    file: 'realistic_fir_trees_pack_lods_gameready.glb',
-    x: -68,
-    z: 12,
-    fitWidth: 40,
-    yaw: -1.1,
   },
   {
     file: 'fantasyassets_-_vol3_trees_and_bushes.glb',
@@ -331,22 +219,6 @@ const LANDMARK_PROPS: PropSpec[] = [
     z: -46,
     fitWidth: 24,
     yaw: 2.4,
-    compact: true,
-  },
-  {
-    file: 'fantasyassets_-_vol3_trees_and_bushes.glb',
-    x: -22,
-    z: -48,
-    fitWidth: 22,
-    yaw: -0.4,
-    compact: true,
-  },
-  {
-    file: 'fantasyassets_-_vol3_trees_and_bushes.glb',
-    x: 62,
-    z: -10,
-    fitWidth: 23,
-    yaw: 1.8,
     compact: true,
   },
   // --- Animated (morph-baked) tree, ticked by the mixer in update() -------
@@ -374,24 +246,6 @@ const LANDMARK_PROPS: PropSpec[] = [
     z: 38,
     fitHeight: 8,
     yaw: 2.2,
-    pivotNode: 'Bark_9_2',
-    compact: true,
-  },
-  {
-    file: 'tree_animate.glb',
-    x: 28,
-    z: -32,
-    fitHeight: 8.2,
-    yaw: -1.0,
-    pivotNode: 'Bark_9_2',
-    compact: true,
-  },
-  {
-    file: 'tree_animate.glb',
-    x: 32,
-    z: 22,
-    fitHeight: 8.0,
-    yaw: 0.9,
     pivotNode: 'Bark_9_2',
     compact: true,
   },
@@ -672,6 +526,7 @@ export async function applyLegacyMaterialFallback(gltf: GltfWithParser): Promise
 export function buildWorldModels(
   collision: CollisionWorld,
   isSoftwareGl: boolean,
+  onMaterial?: (material: THREE.MeshStandardMaterial) => void,
 ): BuiltWorldModels {
   const group = new THREE.Group();
   group.name = 'worldGlbModels';
@@ -706,25 +561,25 @@ export function buildWorldModels(
   specs.push(
     ...scatterPlants(
       'flowersrose_and_sunflower.glb',
-      18,
+      9,
       9137,
-      { fitHeight: 0.8, minRadius: 10, maxRadius: WORLD_PLAYABLE_RADIUS - 8, minGap: 4 },
+      { fitHeight: 0.8, minRadius: 10, maxRadius: WORLD_PLAYABLE_RADIUS - 8, minGap: 5 },
       collision,
       reservedZones,
     ),
     ...scatterPlants(
       'realistic_hd_yellow_bush_lupine_1525.glb',
-      14,
+      7,
       5521,
-      { fitHeight: 1.0, minRadius: 12, maxRadius: WORLD_PLAYABLE_RADIUS - 8, minGap: 5 },
+      { fitHeight: 1.0, minRadius: 12, maxRadius: WORLD_PLAYABLE_RADIUS - 8, minGap: 6 },
       collision,
       reservedZones,
     ),
     ...scatterPlants(
       'grass_claster__downoad__like_please.glb',
-      28,
+      16,
       7734,
-      { fitWidth: 3.2, minRadius: 10, maxRadius: WORLD_PLAYABLE_RADIUS - 8, minGap: 4 },
+      { fitWidth: 3.2, minRadius: 10, maxRadius: WORLD_PLAYABLE_RADIUS - 8, minGap: 5 },
       collision,
       reservedZones,
     ),
@@ -836,6 +691,7 @@ export function buildWorldModels(
       baseZ - anchorZ * sz,
     );
 
+    const reportedMaterials = new Set<THREE.Material>();
     model.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -845,6 +701,18 @@ export function buildWorldModels(
       } else {
         mesh.castShadow = false;
         mesh.receiveShadow = false;
+      }
+
+      // Let the weather system pick up the streamed surfaces (skip distant backdrops)
+      if (onMaterial && !spec.background) {
+        const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        list.forEach((mat) => {
+          if (!mat || reportedMaterials.has(mat)) return;
+          const std = mat as THREE.MeshStandardMaterial;
+          if (!std.isMeshStandardMaterial) return;
+          reportedMaterials.add(mat);
+          onMaterial(std);
+        });
       }
     });
 

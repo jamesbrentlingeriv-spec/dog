@@ -53,21 +53,32 @@ export default function App() {
   const [breedModalOpen, setBreedModalOpen] = useState(false);
   const [rewardsModalOpen, setRewardsModalOpen] = useState(false);
   const [contextLost, setContextLost] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
+  const [transitionOverlay, setTransitionOverlay] = useState<{ fading: boolean; label?: string }>({
+    fading: false,
+  });
 
   // Initialize Three.js engine once in isolated ref container
   useEffect(() => {
     const mountEl = canvasMountRef.current;
     if (!mountEl) return;
 
-    const engine = new BarkshireGameEngine(
-      mountEl,
-      (snapshot) => setHud(snapshot),
-      (lost) => setContextLost(lost),
-    );
-    engineRef.current = engine;
+    let engine: BarkshireGameEngine | null = null;
+    try {
+      engine = new BarkshireGameEngine(
+        mountEl,
+        (snapshot) => setHud(snapshot),
+        (lost) => setContextLost(lost),
+        (fading, label) => setTransitionOverlay({ fading, label }),
+      );
+      engineRef.current = engine;
+    } catch (err) {
+      console.error('Failed to initialize BarkshireGameEngine:', err);
+      setInitError(err instanceof Error ? err.message : String(err));
+    }
 
     return () => {
-      engine.dispose();
+      engine?.dispose();
       engineRef.current = null;
     };
   }, []);
@@ -102,7 +113,7 @@ export default function App() {
     engineRef.current?.toggleEquipReward(id);
   }, []);
 
-  const handleTeleport = useCallback((landmark: 'town' | 'park' | 'pond' | 'gazebo') => {
+  const handleTeleport = useCallback((landmark: 'town' | 'pet_store' | 'park' | 'pond' | 'gazebo') => {
     engineRef.current?.teleportToLandmark(landmark);
   }, []);
 
@@ -110,6 +121,31 @@ export default function App() {
     <div className="relative w-screen h-screen overflow-hidden bg-stone-950">
       {/* Dedicated isolated Three.js WebGL mount container */}
       <div ref={canvasMountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+
+      {/* Smooth Interior Scene Transition Fade */}
+      <div
+        className={`pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-stone-950 transition-opacity duration-200 ${
+          transitionOverlay.fading ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        {transitionOverlay.label && (
+          <div className="font-display text-lg font-semibold text-amber-200 tracking-wide">
+            {transitionOverlay.label}
+          </div>
+        )}
+      </div>
+
+      {/* Startup Error Banner */}
+      {initError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/95 p-6 text-center">
+          <div className="max-w-md space-y-2 rounded-2xl border border-red-500/40 bg-stone-900 p-6">
+            <h2 className="font-display text-xl font-semibold text-red-300">
+              3D Engine Initialization Error
+            </h2>
+            <p className="text-sm text-stone-300">{initError}</p>
+          </div>
+        </div>
+      )}
 
       {/* Graceful WebGL Context Loss Banner */}
       {contextLost && (

@@ -625,9 +625,57 @@ export async function buildGlbDogRig(
     }
   });
 
-  // Compute bounding box to normalize height and center feet on y=0
+  // Setup AnimationMixer & actions BEFORE measuring bounds so SkinnedMesh vertices
+  // reflect the real animated standing pose rather than an unskinned bind pose.
+  const mixer = new THREE.AnimationMixer(model);
+  const actions = new Map<string, THREE.AnimationAction>();
+  gltf.animations.forEach((clip) => {
+    const action = mixer.clipAction(clip);
+    actions.set(clip.name, action);
+  });
+
+  const clipMapping =
+    breed.clipMapping ?? autoGuessGlbClips(gltf.animations.map((c) => c.name));
+
+  // Start idle clip immediately and evaluate 1 frame so bone matrices are live
+  let currentClipName = '';
+  const initialClip = clipMapping.idle || gltf.animations[0]?.name;
+  if (initialClip && actions.has(initialClip)) {
+    actions.get(initialClip)!.reset().play();
+    currentClipName = initialClip;
+    mixer.update(0.05);
+  }
+
+  // Compute exact animated/skinned world bounding box so paws rest cleanly on y=0
   model.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(model);
+  const box = new THREE.Box3();
+  const tmpV = new THREE.Vector3();
+  model.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    const posAttr = mesh.geometry.getAttribute('position');
+    if (!posAttr) return;
+    const skinned = mesh as THREE.SkinnedMesh;
+    if (skinned.isSkinnedMesh && skinned.skeleton) {
+      skinned.skeleton.update();
+      const step = Math.max(1, Math.floor(posAttr.count / 1500));
+      for (let i = 0; i < posAttr.count; i += step) {
+        tmpV.fromBufferAttribute(posAttr, i);
+        skinned.applyBoneTransform(i, tmpV);
+        tmpV.applyMatrix4(skinned.matrixWorld);
+        box.expandByPoint(tmpV);
+      }
+    } else {
+      mesh.geometry.computeBoundingBox();
+      if (mesh.geometry.boundingBox) {
+        box.union(mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld));
+      }
+    }
+  });
+  if (box.isEmpty()) {
+    box.setFromObject(model);
+  }
+
   const size = new THREE.Vector3();
   const center = new THREE.Vector3();
   box.getSize(size);
@@ -648,25 +696,6 @@ export async function buildGlbDogRig(
   glbWrapper.add(model);
   glbWrapper.rotation.y = THREE.MathUtils.degToRad(breed.forwardRotationDeg ?? 0);
   bodyPivot.add(glbWrapper);
-
-  // Setup AnimationMixer & actions
-  const mixer = new THREE.AnimationMixer(model);
-  const actions = new Map<string, THREE.AnimationAction>();
-  gltf.animations.forEach((clip) => {
-    const action = mixer.clipAction(clip);
-    actions.set(clip.name, action);
-  });
-
-  const clipMapping =
-    breed.clipMapping ?? autoGuessGlbClips(gltf.animations.map((c) => c.name));
-
-  // Start idle clip immediately if present
-  let currentClipName = '';
-  const initialClip = clipMapping.idle || gltf.animations[0]?.name;
-  if (initialClip && actions.has(initialClip)) {
-    actions.get(initialClip)!.reset().play();
-    currentClipName = initialClip;
-  }
 
   // Attach wearable rewards proportioned to normalized height
   const rewardScale = targetH / 0.78;
@@ -708,12 +737,36 @@ export async function buildGlbDogRig(
     rewardMeshes,
     dispose: () => {
       mixer.stopAllAction();
+      mixer.uncacheRoot(model);
+      const disposeMat = (m: THREE.Material) => {
+        const rec = m as unknown as Record<string, unknown>;
+        for (const key of [
+          'map',
+          'normalMap',
+          'roughnessMap',
+          'metalnessMap',
+          'aoMap',
+          'emissiveMap',
+          'alphaMap',
+          'bumpMap',
+          'specularMap',
+        ]) {
+          const tex = rec[key];
+          if (tex && typeof (tex as THREE.Texture).dispose === 'function') {
+            // Preserve shared procedural textures (like plaidAlbedo)
+            if (tex !== textures.plaidAlbedo && tex !== textures.contactShadow) {
+              (tex as THREE.Texture).dispose();
+            }
+          }
+        }
+        m.dispose();
+      };
       root.traverse((obj) => {
         if ((obj as THREE.Mesh).isMesh) {
           const mesh = obj as THREE.Mesh;
           mesh.geometry?.dispose();
-          if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
-          else mesh.material?.dispose();
+          if (Array.isArray(mesh.material)) mesh.material.forEach(disposeMat);
+          else if (mesh.material) disposeMat(mesh.material);
         }
       });
     },
@@ -751,20 +804,21 @@ export function updateDogRigAnimation(
       targetClip = rig.clipMapping.poop || rig.clipMapping.action || rig.clipMapping.idle;
     } else if (action === 'eat') {
       targetClip = rig.clipMapping.eat || rig.clipMapping.sniff || rig.clipMapping.action || rig.clipMapping.idle;
-    } else if (speedMs > maxSprintSpeed * 0.55) {
+    } else if (speedMs > maxSprintSpeed * 0.52) {
       targetClip = rig.clipMapping.run || rig.clipMapping.walk;
-      timeScale = THREE.MathUtils.clamp(0.85 + speedNorm * 0.55, 0.8, 1.55);
-    } else if (speedMs > 0.25) {
+      timeScale = THREE.MathUtils.clamp(0.75 + speedNorm * 0.7, 0.75, 1.5);
+    } else if (speedMs > 0.18) {
       targetClip = rig.clipMapping.walk || rig.clipMapping.run;
-      timeScale = THREE.MathUtils.clamp(0.65 + speedNorm * 1.1, 0.65, 1.45);
+      // Match walk animation cadence closely to actual ground speed so paws don't slide
+      timeScale = THREE.MathUtils.clamp(0.55 + (speedMs / Math.max(1.5, maxSprintSpeed * 0.45)) * 0.72, 0.55, 1.45);
     }
 
     if (targetClip && targetClip !== rig.currentClipName && rig.actions.has(targetClip)) {
       const nextAct = rig.actions.get(targetClip)!;
       const prevAct = rig.currentClipName ? rig.actions.get(rig.currentClipName) : undefined;
-      nextAct.reset().setEffectiveTimeScale(timeScale).setEffectiveWeight(1).fadeIn(0.18).play();
+      nextAct.reset().setEffectiveTimeScale(timeScale).setEffectiveWeight(1).fadeIn(0.22).play();
       if (prevAct && prevAct !== nextAct) {
-        prevAct.fadeOut(0.18);
+        prevAct.fadeOut(0.22);
       }
       rig.currentClipName = targetClip;
     } else if (rig.currentClipName && rig.actions.has(rig.currentClipName)) {
@@ -773,10 +827,17 @@ export function updateDogRigAnimation(
 
     rig.mixer.update(dt);
 
-    // Subtle physical lean & dog posture accents on bodyPivot for GLBs too
+    // Subtle organic gait sway & posture accents on bodyPivot for GLBs
     let targetRoll = turnBank;
     let targetPitch = 0;
     let targetY = rig.baseBodyY;
+
+    if (speedMs > 0.25 && (action === 'walk' || action === 'run')) {
+      const gaitPhase = elapsed * strideFreq * (0.42 + speedNorm * 0.55);
+      targetRoll += Math.sin(gaitPhase) * (action === 'run' ? 0.045 : 0.032) * Math.min(1, speedNorm * 1.4);
+      targetPitch += Math.cos(gaitPhase * 2) * (action === 'run' ? 0.045 : 0.02);
+      targetY += Math.max(0, Math.sin(gaitPhase * 2)) * (action === 'run' ? 0.032 : 0.012);
+    }
 
     if (action === 'pee' && !rig.clipMapping.pee) {
       targetRoll = 0.22;

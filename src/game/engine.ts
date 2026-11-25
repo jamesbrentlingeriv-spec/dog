@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { DogAudioEngine } from './audio';
@@ -9,7 +10,7 @@ import {
   updateDogRigAnimation,
 } from './dogModels';
 import { buildNpcPopulation, NpcCharacter } from './npcs';
-import { CollisionWorld, getZoneName, groundHeightAt, isOnRoadOrPlaza } from './terrain';
+import { CollisionWorld, getZoneName, isOnRoadOrPlaza, surfaceHeightAt } from './terrain';
 import { createProceduralTextures, ProceduralTextureSet } from './textures';
 import {
   BUILTIN_BREEDS,
@@ -22,8 +23,8 @@ import {
   WeatherMode,
 } from './types';
 import { DynamicWeatherSystem } from './weather';
-import { buildBarkshireWorld, BuiltWorld } from './worldBuilder';
-import { buildWorldModels, BuiltWorldModels } from './worldModels';
+import { buildBarkshireWorld, BuiltWorld, StoreDoorway } from './worldBuilder';
+import { ActiveStoreInterior, buildStoreInterior } from './interiors';
 
 interface FloatingParticle {
   mesh: THREE.Mesh;
@@ -61,7 +62,6 @@ export class BarkshireGameEngine {
   private textures: ProceduralTextureSet;
   private collision: CollisionWorld;
   private world: BuiltWorld;
-  private worldModels: BuiltWorldModels;
   private npcSystem: {
     group: THREE.Group;
     npcs: NpcCharacter[];
@@ -73,10 +73,11 @@ export class BarkshireGameEngine {
 
   // Player dog state
   private activeBreed: DogBreedConfig = BUILTIN_BREEDS[0];
-  private dogRig!: ActiveDogRig;
-  private dogPos = new THREE.Vector3(-12, 0, -8); // Starts right between Town Square and Central Park!
+  private dogRig: ActiveDogRig | null = null;
+  private breedLoadSeq = 0;
+  private dogPos = new THREE.Vector3(-18, 0, -14); // Starts in Town Square facing Main Street shops!
   private dogVel = new THREE.Vector3();
-  private dogYaw = Math.PI * 0.45; // Facing toward the scenic park fountain & town plaza
+  private dogYaw = Math.PI; // Facing north up Main Street toward Paws & Collars Pet Store & Bakery
   private verticalVel = 0;
   private isGrounded = true;
   private turnBank = 0;
@@ -95,15 +96,15 @@ export class BarkshireGameEngine {
   private autoWeather = true;
   private autoWeatherTimer = 0;
 
-  // Camera orbit state
-  private camYaw = -Math.PI * 0.55;
-  private camPitch = 0.28;
-  private camDistance = 5.4;
+  // Camera orbit state (starts behind the dog looking straight up Main Street storefronts)
+  private camYaw = 0.18;
+  private camPitch = 0.24;
+  private camDistance = 4.2;
   private isDraggingCam = false;
   private lastPointerX = 0;
   private lastPointerY = 0;
-  private currentCamPos = new THREE.Vector3(-18, 3.2, -10);
-  private currentLookAt = new THREE.Vector3(-12, 1.0, -8);
+  private currentCamPos = new THREE.Vector3(-17, 2.4, -10);
+  private currentLookAt = new THREE.Vector3(-18, 0.8, -14);
 
   // Input keys
   private keys = new Set<string>();
@@ -111,10 +112,25 @@ export class BarkshireGameEngine {
 
   // Dynamic world decals & particles (pee puddles, poop mounds, hearts, crumbs)
   private worldMarksGroup = new THREE.Group();
+  private poopProto: THREE.Object3D | null = null;
   private particles: FloatingParticle[] = [];
   private activeSpeech: { speaker: string; text: string; timer: number } | null = null;
   private notification: { id: number; title: string; detail?: string; timer: number } | null = null;
   private notifCounter = 1;
+
+  // Dedicated loadable store interior scene state
+  private activeInterior: ActiveStoreInterior | null = null;
+  private savedOutdoorState: {
+    pos: THREE.Vector3;
+    yaw: number;
+    camYaw: number;
+    skyBg: THREE.Color | THREE.Texture | null;
+    fog: THREE.Fog | THREE.FogExp2 | null;
+  } | null = null;
+  private isTransitioning = false;
+  private onTransitionChange?: (fading: boolean, label?: string) => void;
+  private outdoorSunLight!: THREE.DirectionalLight;
+  private outdoorHemiLight!: THREE.HemisphereLight;
 
   // Loop & lifecycle
   private frameId = 0;
@@ -141,22 +157,24 @@ export class BarkshireGameEngine {
     container: HTMLElement,
     onHudUpdate: (snap: GameHudSnapshot) => void,
     onContextLostChange?: (lost: boolean) => void,
+    onTransitionChange?: (fading: boolean, label?: string) => void,
   ) {
     this.container = container;
     this.onHudUpdate = onHudUpdate;
     this.onContextLostChange = onContextLostChange;
+    this.onTransitionChange = onTransitionChange;
     this.isSoftwareGl = detectSoftwareWebGL();
     this.audio = new DogAudioEngine();
 
-    // 1. Renderer setup (Three.js skill standard)
+    // 1. Renderer setup (tuned for stable VRAM & ring pacing on Linux/APU GPUs)
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.isSoftwareGl,
-      powerPreference: 'high-performance',
+      powerPreference: 'default',
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.08;
-    this.renderer.setPixelRatio(this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+    this.renderer.toneMappingExposure = 0.88;
+    this.renderer.setPixelRatio(1);
     this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
     this.renderer.shadowMap.enabled = !this.isSoftwareGl;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -165,15 +183,16 @@ export class BarkshireGameEngine {
     this.renderer.domElement.style.height = '100%';
     container.appendChild(this.renderer.domElement);
 
-    // 2. Scene + HDRI IBL (falls back to RoomEnvironment while /hdri/sky.hdr loads)
+    // 2. Scene + lightweight 1K HDRI IBL + 2K Tonemapped Sky Dome (saves ~400 MB VRAM vs 8K float HDR)
     this.scene = new THREE.Scene();
+    this.scene.environmentIntensity = 0.38;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     pmrem.compileEquirectangularShader();
     const fallbackEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environment = fallbackEnv;
 
     new RGBELoader().load(
-      '/hdri/sky.hdr',
+      '/hdri/sky_1k.hdr',
       (hdrTex) => {
         if (this.disposed) {
           hdrTex.dispose();
@@ -183,8 +202,7 @@ export class BarkshireGameEngine {
         hdrTex.mapping = THREE.EquirectangularReflectionMapping;
         const envRT = pmrem.fromEquirectangular(hdrTex);
         this.scene.environment = envRT.texture;
-        this.scene.background = hdrTex;
-        this.scene.backgroundBlurriness = 0.02;
+        hdrTex.dispose();
         fallbackEnv.dispose();
         pmrem.dispose();
       },
@@ -194,23 +212,36 @@ export class BarkshireGameEngine {
       },
     );
 
-    // 3. Camera
-    const aspect = (container.clientWidth || window.innerWidth) / Math.max(1, container.clientHeight || window.innerHeight);
-    this.camera = new THREE.PerspectiveCamera(56, aspect, 0.12, 320);
+    new THREE.TextureLoader().load('/hdri/DaySkyHDRI006A_2K_TONEMAPPED.jpg', (skyBg) => {
+      if (this.disposed) {
+        skyBg.dispose();
+        return;
+      }
+      skyBg.colorSpace = THREE.SRGBColorSpace;
+      skyBg.mapping = THREE.EquirectangularReflectionMapping;
+      this.scene.background = skyBg;
+      this.scene.backgroundBlurriness = 0.015;
+    });
 
-    // 4. Lighting rig (Warm directional sun + cool sky/ground HemisphereLight)
-    const hemiLight = new THREE.HemisphereLight(0xa6d2f5, 0x63734a, 0.92);
+    // 3. Camera (tight 0.04m near plane so close-up zooms never clip the dog)
+    const aspect = (container.clientWidth || window.innerWidth) / Math.max(1, container.clientHeight || window.innerHeight);
+    this.camera = new THREE.PerspectiveCamera(56, aspect, 0.04, 320);
+
+    // 4. Lighting rig (Balanced warm directional sun + subtle sky/ground HemisphereLight)
+    const hemiLight = new THREE.HemisphereLight(0xa6d2f5, 0x52613e, 0.42);
     hemiLight.position.set(0, 60, 0);
     this.scene.add(hemiLight);
+    this.outdoorHemiLight = hemiLight;
 
-    const sunLight = new THREE.DirectionalLight(0xfff1d6, 2.35);
+    const sunLight = new THREE.DirectionalLight(0xfff1d6, 1.55);
+    this.outdoorSunLight = sunLight;
     sunLight.position.set(48, 68, 36);
     sunLight.castShadow = !this.isSoftwareGl;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.mapSize.width = 1024;
+    sunLight.shadow.mapSize.height = 1024;
     sunLight.shadow.camera.near = 4;
     sunLight.shadow.camera.far = 160;
-    const sd = 42;
+    const sd = 36;
     sunLight.shadow.camera.left = -sd;
     sunLight.shadow.camera.right = sd;
     sunLight.shadow.camera.top = sd;
@@ -221,17 +252,12 @@ export class BarkshireGameEngine {
     this.scene.add(sunLight.target);
 
     // 5. Procedural Textures, World, Colliders, NPCs, Weather
-    const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
+    const maxAniso = Math.min(this.renderer.capabilities.getMaxAnisotropy(), 4);
     this.textures = createProceduralTextures(maxAniso);
     this.collision = new CollisionWorld();
     this.world = buildBarkshireWorld(this.textures, this.collision, this.isSoftwareGl);
     this.scene.add(this.world.root);
     this.scene.add(this.worldMarksGroup);
-
-    // Hand-authored GLB buildings, groves, flowers & whole-scene dioramas
-    // stream in progressively on top of the procedural world
-    this.worldModels = buildWorldModels(this.collision, this.isSoftwareGl);
-    this.scene.add(this.worldModels.group);
 
     this.npcSystem = buildNpcPopulation(this.textures);
     this.scene.add(this.npcSystem.group);
@@ -245,20 +271,26 @@ export class BarkshireGameEngine {
       this.world.wettableMaterials,
     );
 
-    // 6. Initial Dog Rig (procedural placeholder while GLB breed loads)
-    this.dogPos.y = groundHeightAt(this.dogPos.x, this.dogPos.z);
-    this.dogRig = buildProceduralDogRig('golden', this.textures);
-    this.dogRig.root.position.copy(this.dogPos);
-    this.dogRig.root.rotation.y = this.dogYaw;
-    this.scene.add(this.dogRig.root);
-    if (this.activeBreed.source === 'glb') {
-      void this.setBreed(this.activeBreed);
-    }
+    // 6. Initial Dog Rig (loads default American Pitbull GLB directly — never spawns low-poly placeholder)
+    this.dogPos.y = surfaceHeightAt(this.dogPos.x, this.dogPos.z);
+    void this.setBreed(this.activeBreed, { silent: true });
 
-    // Pre-warm shaders on GPU
-    if (!this.isSoftwareGl) {
-      this.renderer.compile(this.scene, this.camera);
-    }
+    // Preload realistic 3D poop prop GLB for triggerPoop()
+    new GLTFLoader().load(
+      '/models/world/ready/prop_poop.glb',
+      (gltf) => {
+        if (this.disposed) return;
+        gltf.scene.traverse((ch) => {
+          if ((ch as THREE.Mesh).isMesh) {
+            ch.castShadow = true;
+            ch.receiveShadow = true;
+          }
+        });
+        this.poopProto = gltf.scene;
+      },
+      undefined,
+      () => {},
+    );
 
     // 7. Bind Input & Resize Listeners
     this.handleKeyDown = (e: KeyboardEvent) => {
@@ -309,7 +341,7 @@ export class BarkshireGameEngine {
       this.lastPointerX = e.clientX;
       this.lastPointerY = e.clientY;
       this.camYaw -= dx * 0.0055;
-      this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * 0.0045, 0.08, 0.92);
+      this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * 0.0045, -0.08, 1.05);
     };
 
     this.handlePointerUp = () => {
@@ -318,7 +350,9 @@ export class BarkshireGameEngine {
 
     this.handleWheel = (e: WheelEvent) => {
       if (e.target !== this.renderer.domElement) return;
-      this.camDistance = THREE.MathUtils.clamp(this.camDistance + e.deltaY * 0.004, 2.8, 11.5);
+      e.preventDefault();
+      const step = Math.max(0.0012, this.camDistance * 0.00095);
+      this.camDistance = THREE.MathUtils.clamp(this.camDistance + e.deltaY * step, 0.55, 12.5);
     };
 
     this.handleResize = () => {
@@ -346,7 +380,7 @@ export class BarkshireGameEngine {
     this.renderer.domElement.addEventListener('pointerdown', this.handlePointerDown);
     window.addEventListener('pointermove', this.handlePointerMove);
     window.addEventListener('pointerup', this.handlePointerUp);
-    this.renderer.domElement.addEventListener('wheel', this.handleWheel, { passive: true });
+    this.renderer.domElement.addEventListener('wheel', this.handleWheel, { passive: false });
     window.addEventListener('resize', this.handleResize);
     this.renderer.domElement.addEventListener('webglcontextlost', this.handleContextLost);
     this.renderer.domElement.addEventListener('webglcontextrestored', this.handleContextRestored);
@@ -359,29 +393,26 @@ export class BarkshireGameEngine {
   // ---------------------------------------------------------------------------
   // Public API for React UI Controls & Breed Studio
   // ---------------------------------------------------------------------------
-  public async setBreed(breed: DogBreedConfig): Promise<void> {
+  public async setBreed(breed: DogBreedConfig, opts?: { silent?: boolean }): Promise<void> {
+    const seq = ++this.breedLoadSeq;
     this.activeBreed = breed;
     let nextRig: ActiveDogRig;
     if (breed.source === 'glb' && breed.glbUrl) {
-      try {
-        nextRig = await buildGlbDogRig(breed, this.textures);
-      } catch (err) {
-        console.warn(`[Engine] Could not load GLB for ${breed.name}, falling back to procedural rig:`, err);
-        nextRig = buildProceduralDogRig(breed.proceduralType ?? 'golden', this.textures);
-      }
+      nextRig = await buildGlbDogRig(breed, this.textures);
     } else {
       nextRig = buildProceduralDogRig(breed.proceduralType ?? 'golden', this.textures);
     }
 
-    if (this.disposed) {
+    if (this.disposed || seq !== this.breedLoadSeq) {
       nextRig.dispose();
       return;
     }
 
     // Swap rig seamlessly at current world coordinates
-    const prevRig = this.dogRig;
-    this.scene.remove(prevRig.root);
-    prevRig.dispose();
+    if (this.dogRig) {
+      this.scene.remove(this.dogRig.root);
+      this.dogRig.dispose();
+    }
 
     this.dogRig = nextRig;
     this.dogRig.root.position.copy(this.dogPos);
@@ -389,15 +420,17 @@ export class BarkshireGameEngine {
     this.syncEquippedRewardsToRig();
     this.scene.add(this.dogRig.root);
 
-    this.pushNotification(`Switched to ${breed.name}`, breed.physics.label);
-    this.audio.playBark(breed.physics.barkPitch);
+    if (!opts?.silent) {
+      this.pushNotification(`Switched to ${breed.name}`, breed.physics.label);
+      this.audio.playBark(breed.physics.barkPitch);
+    }
     this.emitHud();
   }
 
   public updateActiveBreedSettings(breed: DogBreedConfig) {
     if (this.activeBreed.id !== breed.id) return;
     this.activeBreed = breed;
-    if (this.dogRig.source === 'glb') {
+    if (this.dogRig && this.dogRig.source === 'glb') {
       if (this.dogRig.glbWrapper) {
         this.dogRig.glbWrapper.rotation.y = THREE.MathUtils.degToRad(breed.forwardRotationDeg ?? 0);
       }
@@ -433,18 +466,24 @@ export class BarkshireGameEngine {
     this.emitHud();
   }
 
-  public teleportToLandmark(landmark: 'town' | 'park' | 'pond' | 'gazebo') {
+  public teleportToLandmark(landmark: 'town' | 'pet_store' | 'park' | 'pond' | 'gazebo') {
+    if (this.activeInterior) {
+      this.exitStoreImmediate();
+    }
     const coords: Record<typeof landmark, [number, number]> = {
-      town: [-14, -8],
+      town: [-18, -14],
+      pet_store: [-11.8, -24],
       park: [12, -14],
       pond: [16, 22],
       gazebo: [45, -24],
     };
     const [tx, tz] = coords[landmark];
-    this.dogPos.set(tx, groundHeightAt(tx, tz), tz);
+    this.dogPos.set(tx, surfaceHeightAt(tx, tz), tz);
     this.dogVel.set(0, 0, 0);
     this.actionState = 'idle';
-    this.pushNotification(`Arrived at ${getZoneName(tx, tz)}`);
+    this.pushNotification(
+      landmark === 'pet_store' ? 'Arrived at Paws & Collars Pet Store' : `Arrived at ${getZoneName(tx, tz)}`,
+    );
     this.emitHud();
   }
 
@@ -530,7 +569,7 @@ export class BarkshireGameEngine {
     // Spawn wet puddle decal on ground
     const px = this.dogPos.x + Math.cos(this.dogYaw) * 0.22;
     const pz = this.dogPos.z - Math.sin(this.dogYaw) * 0.22;
-    const py = groundHeightAt(px, pz);
+    const py = surfaceHeightAt(px, pz);
     const puddle = new THREE.Mesh(
       new THREE.CircleGeometry(0.32, 16),
       new THREE.MeshStandardMaterial({
@@ -577,22 +616,28 @@ export class BarkshireGameEngine {
     this.dogVel.multiplyScalar(0.1);
     this.audio.playPoop();
 
-    // Spawn a sculpted 3-coil poop pile behind the dog
+    // Spawn realistic 3D poop GLB behind the dog (falls back to sculpted coil while loading)
     const bx = this.dogPos.x - Math.sin(this.dogYaw) * 0.48;
     const bz = this.dogPos.z - Math.cos(this.dogYaw) * 0.48;
-    const by = groundHeightAt(bx, bz);
+    const by = surfaceHeightAt(bx, bz);
     const poopGroup = new THREE.Group();
-    poopGroup.position.set(bx, by + 0.02, bz);
-    const poopMat = new THREE.MeshStandardMaterial({ color: 0x4f331c, roughness: 0.62 });
-    const tier1 = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.055, 8, 14), poopMat);
-    tier1.rotation.x = Math.PI / 2;
-    tier1.position.y = 0.045;
-    const tier2 = new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.045, 8, 12), poopMat);
-    tier2.rotation.x = Math.PI / 2;
-    tier2.position.y = 0.11;
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.09, 10), poopMat);
-    tip.position.y = 0.175;
-    poopGroup.add(tier1, tier2, tip);
+    poopGroup.position.set(bx, by + 0.01, bz);
+    poopGroup.rotation.y = Math.random() * Math.PI * 2;
+    if (this.poopProto) {
+      const clonedPoop = this.poopProto.clone(true);
+      poopGroup.add(clonedPoop);
+    } else {
+      const poopMat = new THREE.MeshStandardMaterial({ color: 0x4f331c, roughness: 0.62 });
+      const tier1 = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.055, 8, 14), poopMat);
+      tier1.rotation.x = Math.PI / 2;
+      tier1.position.y = 0.045;
+      const tier2 = new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.045, 8, 12), poopMat);
+      tier2.rotation.x = Math.PI / 2;
+      tier2.position.y = 0.11;
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.09, 10), poopMat);
+      tip.position.y = 0.175;
+      poopGroup.add(tier1, tier2, tip);
+    }
     this.worldMarksGroup.add(poopGroup);
     this.pruneOldMarks();
 
@@ -624,8 +669,153 @@ export class BarkshireGameEngine {
     this.emitHud();
   }
 
+  private findNearestDoorway(maxDist: number): StoreDoorway | null {
+    if (this.activeInterior) return null;
+    let best: StoreDoorway | null = null;
+    let bestD = maxDist;
+    for (const d of this.world.doorways) {
+      const dist = Math.hypot(d.position.x - this.dogPos.x, d.position.z - this.dogPos.z);
+      if (dist < bestD) {
+        bestD = dist;
+        best = d;
+      }
+    }
+    return best;
+  }
+
+  private enterStore(door: StoreDoorway) {
+    if (this.isTransitioning || this.activeInterior) return;
+    this.isTransitioning = true;
+    this.dogVel.set(0, 0, 0);
+    this.onTransitionChange?.(true, `Entering ${door.name}...`);
+
+    window.setTimeout(() => {
+      if (this.disposed) return;
+      // Save outdoor world state and hide outdoor scene completely
+      this.savedOutdoorState = {
+        pos: door.position.clone(),
+        yaw: door.exitYaw,
+        camYaw: this.camYaw,
+        skyBg: this.scene.background,
+        fog: this.scene.fog,
+      };
+      this.world.root.visible = false;
+      this.worldMarksGroup.visible = false;
+      this.npcSystem.group.visible = false;
+      this.outdoorSunLight.visible = false;
+      this.outdoorHemiLight.visible = false;
+      this.scene.fog = null;
+      this.scene.background = new THREE.Color(0x161412);
+
+      // Load dedicated interior scene
+      const interior = buildStoreInterior(door.id, this.textures, this.isSoftwareGl);
+      this.activeInterior = interior;
+      this.scene.add(interior.root);
+
+      this.dogPos.copy(interior.spawnPos);
+      this.dogYaw = interior.spawnYaw;
+      this.camYaw = 0;
+      this.camDistance = Math.min(this.camDistance, 3.6);
+      this.currentCamPos.set(this.dogPos.x, 2.0, this.dogPos.z + 3.0);
+      this.currentLookAt.set(this.dogPos.x, 0.7, this.dogPos.z - 1.5);
+      this.actionState = 'idle';
+      this.pushNotification(`Welcome to ${interior.name}`, 'Explore inside, grab treats, or press E at the exit door!');
+      this.emitHud();
+
+      window.setTimeout(() => {
+        if (this.disposed) return;
+        this.isTransitioning = false;
+        this.onTransitionChange?.(false);
+      }, 220);
+    }, 220);
+  }
+
+  private exitStoreImmediate() {
+    if (!this.activeInterior) return;
+    this.scene.remove(this.activeInterior.root);
+    this.activeInterior.dispose();
+    this.activeInterior = null;
+
+    this.world.root.visible = true;
+    this.worldMarksGroup.visible = true;
+    this.npcSystem.group.visible = true;
+    this.outdoorSunLight.visible = true;
+    this.outdoorHemiLight.visible = true;
+    if (this.savedOutdoorState) {
+      this.scene.background = this.savedOutdoorState.skyBg;
+      this.scene.fog = this.savedOutdoorState.fog;
+      this.dogPos.copy(this.savedOutdoorState.pos);
+      this.dogPos.y = surfaceHeightAt(this.dogPos.x, this.dogPos.z);
+      this.dogYaw = this.savedOutdoorState.yaw;
+      this.camYaw = this.savedOutdoorState.camYaw;
+      this.savedOutdoorState = null;
+    }
+    this.dogVel.set(0, 0, 0);
+    this.actionState = 'idle';
+  }
+
+  private exitStore() {
+    if (this.isTransitioning || !this.activeInterior) return;
+    this.isTransitioning = true;
+    this.dogVel.set(0, 0, 0);
+    this.onTransitionChange?.(true, 'Heading back to Barkshire...');
+
+    window.setTimeout(() => {
+      if (this.disposed) return;
+      this.exitStoreImmediate();
+      this.pushNotification('Back on Main Street', 'Explore Barkshire or visit another store!');
+      this.emitHud();
+
+      window.setTimeout(() => {
+        if (this.disposed) return;
+        this.isTransitioning = false;
+        this.onTransitionChange?.(false);
+      }, 220);
+    }, 220);
+  }
+
   public triggerInteractOrBellyRub() {
-    if (!this.isGrounded) return;
+    if (!this.isGrounded || this.isTransitioning) return;
+
+    // 1. Inside a store: check Exit Doorway first, then Indoor Shopkeeper!
+    if (this.activeInterior) {
+      const interior = this.activeInterior;
+      if (this.dogPos.distanceTo(interior.exitPos) < 2.2) {
+        this.exitStore();
+        return;
+      }
+      const shopNpc = interior.npc;
+      if (this.dogPos.distanceTo(shopNpc.position) < 3.6) {
+        shopNpc.pettingTimer = 2.8;
+        this.actionState = 'bellyRub';
+        this.actionTimer = 2.8;
+        this.dogVel.set(0, 0, 0);
+        this.audio.playBellyRub();
+        this.spawnHeartBurst(this.dogPos);
+        if (shopNpc.petCooldown <= 0) {
+          shopNpc.petCooldown = 8.0;
+          this.friendlyInteractions++;
+          this.energy = Math.min(100, this.energy + 18);
+          this.pushNotification(`Belly Rubs from ${shopNpc.name}!`, `Friendly interactions: ${this.friendlyInteractions} · +Energy`);
+        }
+        this.setSpeech(shopNpc.name, shopNpc.greetingLine);
+        this.emitHud();
+        return;
+      }
+      this.actionState = 'bellyRub';
+      this.actionTimer = 1.9;
+      this.dogVel.multiplyScalar(0.2);
+      this.emitHud();
+      return;
+    }
+
+    // 2. Outdoors: check Enterable Store Doorway!
+    const door = this.findNearestDoorway(2.8);
+    if (door) {
+      this.enterStore(door);
+      return;
+    }
+
     const npc = this.findNearestNpc(3.6);
     if (npc) {
       if (npc.petCooldown > 0) {
@@ -713,9 +903,10 @@ export class BarkshireGameEngine {
   }
 
   private syncEquippedRewardsToRig() {
-    if (!this.dogRig) return;
+    const rig = this.dogRig;
+    if (!rig) return;
     this.rewards.forEach((r) => {
-      const obj = this.dogRig.rewardMeshes[r.id];
+      const obj = rig.rewardMeshes[r.id];
       if (obj) obj.visible = r.unlocked && r.equipped;
     });
   }
@@ -808,7 +999,13 @@ export class BarkshireGameEngine {
       if (this.disposed) return;
 
       const now = performance.now();
-      const dt = Math.min((now - this.lastFrameTime) / 1000, 0.05);
+      const rawElapsedMs = now - this.lastFrameTime;
+      // Cap frame rate at ~60 FPS to prevent high-refresh GPU ring saturation on Linux APUs
+      if (!this.isSoftwareGl && this.lastFrameTime > 0 && rawElapsedMs < 15.5) {
+        this.frameId = requestAnimationFrame(tick);
+        return;
+      }
+      const dt = Math.min(rawElapsedMs / 1000, 0.05);
       this.lastFrameTime = now;
       this.elapsed += dt;
 
@@ -939,13 +1136,17 @@ export class BarkshireGameEngine {
       this.turnBank = THREE.MathUtils.damp(this.turnBank, 0, 10, dt);
     }
 
-    // Apply horizontal motion + collision sliding
+    // Apply horizontal motion + collision sliding (uses active interior walls when indoors!)
     this.dogPos.x += this.dogVel.x * dt;
     this.dogPos.z += this.dogVel.z * dt;
-    this.collision.resolvePosition(this.dogPos, phys.colliderRadius);
+    if (this.activeInterior) {
+      this.activeInterior.collision.resolvePosition(this.dogPos, phys.colliderRadius);
+    } else {
+      this.collision.resolvePosition(this.dogPos, phys.colliderRadius);
+    }
 
     // Apply vertical gravity + ground snap
-    const floorY = groundHeightAt(this.dogPos.x, this.dogPos.z);
+    const floorY = this.activeInterior ? 0 : surfaceHeightAt(this.dogPos.x, this.dogPos.z);
     if (!this.isGrounded) {
       this.verticalVel -= phys.gravity * dt;
       this.dogPos.y += this.verticalVel * dt;
@@ -968,10 +1169,12 @@ export class BarkshireGameEngine {
       else this.actionState = 'idle';
     }
 
-    // Footstep sound feedback
-    if (this.isGrounded && speedMs > 0.35) {
-      const onPavement = isOnRoadOrPlaza(this.dogPos.x, this.dogPos.z);
+    // Footstep sound feedback (pavement/indoor tile claw-clicks vs soft grass pawfalls)
+    if (this.isGrounded && speedMs > 0.18) {
+      const onPavement = Boolean(this.activeInterior) || isOnRoadOrPlaza(this.dogPos.x, this.dogPos.z);
       this.audio.playFootstep(speedMs / phys.sprintSpeed, onPavement, dt);
+    } else {
+      this.audio.playFootstep(0, false, dt);
     }
 
     // 5. Hunger, Energy & Bladder Need Simulation
@@ -992,54 +1195,77 @@ export class BarkshireGameEngine {
     }
     this.bladder = Math.min(100, this.bladder + 0.55 * dt);
 
-    // 6. Check Hidden Treat Pickups
-    for (let i = 0; i < this.world.treats.length; i++) {
-      const tr = this.world.treats[i];
-      if (tr.found) continue;
-      const dist = Math.hypot(tr.position.x - this.dogPos.x, tr.position.z - this.dogPos.z);
-      if (dist < 1.35) {
-        tr.found = true;
-        tr.group.visible = false;
-        this.treatsFound++;
-        this.hunger = Math.min(100, this.hunger + tr.hungerRestore);
-        this.energy = Math.min(100, this.energy + tr.energyRestore);
-        this.bladder = Math.min(100, this.bladder + 10);
-        this.actionState = 'eat';
-        this.actionTimer = 0.8;
-        this.audio.playTreatChomp();
-        this.spawnCrumbBurst(tr.position);
-        this.pushNotification(
-          `Found ${tr.name}! (${this.treatsFound}/${this.world.treats.length})`,
-          `+${tr.hungerRestore}% Hunger · +${tr.energyRestore}% Energy`,
-        );
+    // 6. Check Hidden Treat Pickups (Indoor vs Outdoor)
+    if (this.activeInterior) {
+      for (const tr of this.activeInterior.treats) {
+        if (tr.found) continue;
+        const dist = Math.hypot(tr.position.x - this.dogPos.x, tr.position.z - this.dogPos.z);
+        if (dist < 1.3) {
+          tr.found = true;
+          tr.group.visible = false;
+          this.hunger = Math.min(100, this.hunger + tr.hungerRestore);
+          this.energy = Math.min(100, this.energy + tr.energyRestore);
+          this.actionState = 'eat';
+          this.actionTimer = 0.8;
+          this.audio.playTreatChomp();
+          this.spawnCrumbBurst(tr.position);
+          this.pushNotification(`Enjoyed ${tr.name}!`, `+${tr.hungerRestore}% Hunger · +${tr.energyRestore}% Energy`);
+        }
+      }
+    } else {
+      for (let i = 0; i < this.world.treats.length; i++) {
+        const tr = this.world.treats[i];
+        if (tr.found) continue;
+        const dist = Math.hypot(tr.position.x - this.dogPos.x, tr.position.z - this.dogPos.z);
+        if (dist < 1.35) {
+          tr.found = true;
+          tr.group.visible = false;
+          this.treatsFound++;
+          this.hunger = Math.min(100, this.hunger + tr.hungerRestore);
+          this.energy = Math.min(100, this.energy + tr.energyRestore);
+          this.bladder = Math.min(100, this.bladder + 10);
+          this.actionState = 'eat';
+          this.actionTimer = 0.8;
+          this.audio.playTreatChomp();
+          this.spawnCrumbBurst(tr.position);
+          this.pushNotification(
+            `Found ${tr.name}! (${this.treatsFound}/${this.world.treats.length})`,
+            `+${tr.hungerRestore}% Hunger · +${tr.energyRestore}% Energy`,
+          );
+        }
       }
     }
 
     // 7. Update Dog Transform & Animation
-    this.dogRig.root.position.copy(this.dogPos);
-    this.dogRig.root.rotation.y = this.dogYaw;
-    updateDogRigAnimation(
-      this.dogRig,
-      this.actionState,
-      speedMs,
-      phys.sprintSpeed,
-      this.turnBank,
-      phys.strideFrequency,
-      this.actionTimer,
-      this.elapsed,
-      dt,
-    );
+    if (this.dogRig) {
+      this.dogRig.root.position.copy(this.dogPos);
+      this.dogRig.root.rotation.y = this.dogYaw;
+      updateDogRigAnimation(
+        this.dogRig,
+        this.actionState,
+        speedMs,
+        phys.sprintSpeed,
+        this.turnBank,
+        phys.strideFrequency,
+        this.actionTimer,
+        this.elapsed,
+        dt,
+      );
+    }
 
-    // 8. Update World, NPCs, Weather & Particles
-    const scentRadius = this.hasEquippedReward('legend_cape')
-      ? 95
-      : this.hasEquippedReward('bandana')
-        ? 46
-        : 34;
-    this.world.update(this.elapsed, dt, this.sniffActive, scentRadius, this.dogPos);
-    this.worldModels.update(dt);
-    this.npcSystem.update(this.elapsed, dt, this.dogPos);
-    this.weatherSystem.update(this.elapsed, dt, this.dogPos);
+    // 8. Update Active Interior OR Outdoor World, NPCs & Weather
+    if (this.activeInterior) {
+      this.activeInterior.update(this.elapsed, dt, this.dogPos);
+    } else {
+      const scentRadius = this.hasEquippedReward('legend_cape')
+        ? 95
+        : this.hasEquippedReward('bandana')
+          ? 46
+          : 34;
+      this.world.update(this.elapsed, dt, this.sniffActive, scentRadius, this.dogPos);
+      this.npcSystem.update(this.elapsed, dt, this.dogPos);
+      this.weatherSystem.update(this.elapsed, dt, this.dogPos);
+    }
 
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const pt = this.particles[i];
@@ -1059,23 +1285,42 @@ export class BarkshireGameEngine {
       }
     }
 
-    // 9. Smooth Third-Person Chase Camera with Dynamic Sprint FOV
-    const horizDist = Math.cos(this.camPitch) * this.camDistance;
-    const vertDist = Math.sin(this.camPitch) * this.camDistance + 1.15;
+    // 9. Smooth Third-Person Chase Camera with Close-Up Framing & Indoor Room Clamping
+    const effectiveCamDist = this.activeInterior ? Math.min(this.camDistance, 4.4) : this.camDistance;
+    const dogFocusY = Math.max(0.22, this.activeBreed.physics.targetHeight * 0.65);
+    const zoomLift = THREE.MathUtils.clamp((effectiveCamDist - 0.8) * 0.2, 0.04, 0.95);
+    const horizDist = Math.cos(this.camPitch) * effectiveCamDist;
+    const vertDist = Math.sin(this.camPitch) * effectiveCamDist + dogFocusY + zoomLift;
     _camGoalPos.set(
       this.dogPos.x + Math.sin(this.camYaw) * horizDist,
       this.dogPos.y + vertDist,
       this.dogPos.z + Math.cos(this.camYaw) * horizDist,
     );
-    const camFloor = groundHeightAt(_camGoalPos.x, _camGoalPos.z) + 0.55;
-    if (_camGoalPos.y < camFloor) _camGoalPos.y = camFloor;
+    if (this.activeInterior) {
+      const margin = 0.45;
+      _camGoalPos.x = THREE.MathUtils.clamp(
+        _camGoalPos.x,
+        -this.activeInterior.roomHalfW + margin,
+        this.activeInterior.roomHalfW - margin,
+      );
+      _camGoalPos.z = THREE.MathUtils.clamp(
+        _camGoalPos.z,
+        -this.activeInterior.roomHalfD + margin,
+        this.activeInterior.roomHalfD - margin,
+      );
+      _camGoalPos.y = THREE.MathUtils.clamp(_camGoalPos.y, 0.25, this.activeInterior.roomHeight - 0.45);
+    } else {
+      const minCamClearance = THREE.MathUtils.clamp(effectiveCamDist * 0.14, 0.12, 0.55);
+      const camFloor = surfaceHeightAt(_camGoalPos.x, _camGoalPos.z) + minCamClearance;
+      if (_camGoalPos.y < camFloor) _camGoalPos.y = camFloor;
+    }
 
     const camLambda = 8.5;
     this.currentCamPos.x = THREE.MathUtils.damp(this.currentCamPos.x, _camGoalPos.x, camLambda, dt);
     this.currentCamPos.y = THREE.MathUtils.damp(this.currentCamPos.y, _camGoalPos.y, camLambda, dt);
     this.currentCamPos.z = THREE.MathUtils.damp(this.currentCamPos.z, _camGoalPos.z, camLambda, dt);
 
-    _camLookTarget.set(this.dogPos.x, this.dogPos.y + 0.65, this.dogPos.z);
+    _camLookTarget.set(this.dogPos.x, this.dogPos.y + dogFocusY, this.dogPos.z);
     this.currentLookAt.x = THREE.MathUtils.damp(this.currentLookAt.x, _camLookTarget.x, 12, dt);
     this.currentLookAt.y = THREE.MathUtils.damp(this.currentLookAt.y, _camLookTarget.y, 12, dt);
     this.currentLookAt.z = THREE.MathUtils.damp(this.currentLookAt.z, _camLookTarget.z, 12, dt);
@@ -1108,6 +1353,36 @@ export class BarkshireGameEngine {
   }
 
   private computeNearbyPrompt(): NearbyPrompt | null {
+    if (this.activeInterior) {
+      if (this.dogPos.distanceTo(this.activeInterior.exitPos) < 2.2) {
+        return {
+          key: 'E',
+          label: 'Exit to Main Street',
+          sublabel: `Leave ${this.activeInterior.name}`,
+          action: 'exit_store',
+        };
+      }
+      if (this.dogPos.distanceTo(this.activeInterior.npc.position) < 3.6) {
+        return {
+          key: 'E',
+          label: `Get Belly Rubs from ${this.activeInterior.npc.name}`,
+          sublabel: this.activeInterior.npc.role,
+          action: 'pet',
+        };
+      }
+      return null;
+    }
+
+    const door = this.findNearestDoorway(2.8);
+    if (door) {
+      return {
+        key: 'E',
+        label: `Enter ${door.name}`,
+        sublabel: door.subtitle,
+        action: 'enter_store',
+      };
+    }
+
     const npc = this.findNearestNpc(3.6);
     if (npc) {
       return {
@@ -1131,7 +1406,7 @@ export class BarkshireGameEngine {
 
   private emitHud() {
     this.onHudUpdate({
-      zoneName: getZoneName(this.dogPos.x, this.dogPos.z),
+      zoneName: this.activeInterior ? this.activeInterior.name : getZoneName(this.dogPos.x, this.dogPos.z),
       breedName: this.activeBreed.name,
       breedId: this.activeBreed.id,
       actionState: this.actionState,
@@ -1182,9 +1457,9 @@ export class BarkshireGameEngine {
     this.renderer.domElement.removeEventListener('webglcontextlost', this.handleContextLost);
     this.renderer.domElement.removeEventListener('webglcontextrestored', this.handleContextRestored);
 
+    this.activeInterior?.dispose();
     this.dogRig?.dispose();
     this.world.dispose();
-    this.worldModels.dispose();
     this.npcSystem.dispose();
     this.weatherSystem.dispose();
     this.textures.dispose();
