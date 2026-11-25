@@ -1,0 +1,10 @@
+{
+  "appId": "com.barkshire.dogsim",
+  "appName": "Barkshire",
+  "webDir": "dist",
+  "backgroundColor": "#0c0a09",
+  "android": {
+    "backgroundColor": "#0c0a09",
+    "allowMixedContent": true
+  }
+}

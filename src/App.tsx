@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { BreedStudioModal } from './components/BreedStudioModal';
 import { GameHUD } from './components/GameHUD';
+import { MobileControls } from './components/MobileControls';
 import { RewardsModal } from './components/RewardsModal';
 import { BarkshireGameEngine } from './game/engine';
 import {
@@ -56,6 +58,12 @@ export default function App() {
   const [initError, setInitError] = useState<string | null>(null);
   const [transitionOverlay, setTransitionOverlay] = useState<{ fading: boolean; label?: string }>({
     fading: false,
+  });
+  const [mobileMode, setMobileMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    if (Capacitor.isNativePlatform()) return true;
+    const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    return coarse || navigator.maxTouchPoints > 0 || window.innerWidth < 900;
   });
 
   // Initialize Three.js engine once in isolated ref container
@@ -117,6 +125,19 @@ export default function App() {
     engineRef.current?.teleportToLandmark(landmark);
   }, []);
 
+  const handleMobileMove = useCallback((forward: number, right: number, sprint: boolean) => {
+    engineRef.current?.setVirtualInput(forward, right, sprint);
+  }, []);
+
+  const handleToggleMobileMode = useCallback(() => {
+    setMobileMode((prev) => {
+      if (prev) {
+        engineRef.current?.setVirtualInput(0, 0, false);
+      }
+      return !prev;
+    });
+  }, []);
+
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-stone-950">
       {/* Dedicated isolated Three.js WebGL mount container */}
@@ -164,6 +185,8 @@ export default function App() {
       {/* Semantic DOM HUD Overlay */}
       <GameHUD
         hud={hud}
+        mobileMode={mobileMode}
+        onToggleMobileMode={handleToggleMobileMode}
         onBark={() => engineRef.current?.triggerBark()}
         onSniff={() => engineRef.current?.toggleSniff()}
         onPee={() => engineRef.current?.triggerPee()}
@@ -176,6 +199,25 @@ export default function App() {
         onOpenBreedStudio={() => setBreedModalOpen(true)}
         onOpenRewards={() => setRewardsModalOpen(true)}
       />
+
+      {/* Single-Joystick + Action Buttons Overlay for Android & Touch Devices */}
+      {mobileMode && !breedModalOpen && !rewardsModalOpen && (
+        <MobileControls
+          hud={hud}
+          onMove={handleMobileMove}
+          onJump={() => engineRef.current?.triggerJump()}
+          onBark={() => engineRef.current?.triggerBark()}
+          onSniff={() => engineRef.current?.toggleSniff()}
+          onInteract={() => engineRef.current?.triggerInteractOrBellyRub()}
+          onPee={() => engineRef.current?.triggerPee()}
+          onPoop={() => engineRef.current?.triggerPoop()}
+          onRest={() => engineRef.current?.triggerRest()}
+          onWeatherChange={handleWeatherChange}
+          onToggleMute={() => engineRef.current?.toggleMute()}
+          onOpenBreedStudio={() => setBreedModalOpen(true)}
+          onOpenRewards={() => setRewardsModalOpen(true)}
+        />
+      )}
 
       {/* Breeds & Animated GLB Studio */}
       <BreedStudioModal

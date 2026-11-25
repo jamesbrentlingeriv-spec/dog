@@ -19,3 +19,13 @@ public/textures/**/*.blend
 public/textures/**/*.usdc
 public/textures/**/*.mtlx
 public/textures/**/*.tres
+
+# Android build outputs & synced WebView bundle
+android/.gradle/
+android/app/build/
+android/build/
+android/capacitor-cordova-android-plugins/
+android/app/src/main/assets/public/
+android/local.properties
+*.apk
+*.aab

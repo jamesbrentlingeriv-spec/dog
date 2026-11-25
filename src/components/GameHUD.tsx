@@ -15,11 +15,14 @@ import {
   Droplets,
   Moon,
   Megaphone,
+  Gamepad2,
 } from 'lucide-react';
 import type { GameHudSnapshot, WeatherMode } from '../game/types';
 
 interface GameHUDProps {
   hud: GameHudSnapshot;
+  mobileMode: boolean;
+  onToggleMobileMode: () => void;
   onBark: () => void;
   onSniff: () => void;
   onPee: () => void;
@@ -42,6 +45,8 @@ const WEATHER_OPTIONS: { mode: WeatherMode; label: string; icon: React.ReactNode
 
 export const GameHUD: React.FC<GameHUDProps> = ({
   hud,
+  mobileMode,
+  onToggleMobileMode,
   onBark,
   onSniff,
   onPee,
@@ -76,15 +81,41 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   }, []);
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 sm:p-5">
+    <div
+      className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-3 sm:p-5"
+      style={{
+        paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))',
+        paddingLeft: 'max(0.75rem, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(0.75rem, env(safe-area-inset-right, 0px))',
+        paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
+      }}
+    >
       {/* Top-Left Minimal Spec & Needs Strip (No side-flank clutter, no backdrop-filter) */}
       <div className="flex items-start justify-between gap-4">
-        <div className="pointer-events-auto bg-stone-950/85 border border-stone-800/90 rounded-xl px-4 py-3 max-w-sm shadow-lg">
-          <div className="flex items-baseline gap-2.5">
-            <h1 className="font-display text-lg font-semibold text-stone-50 tracking-tight whitespace-nowrap">
-              Barkshire
-            </h1>
-            <span className="text-xs text-stone-400 truncate">{hud.zoneName}</span>
+        <div
+          className={`pointer-events-auto bg-stone-950/85 border border-stone-800/90 rounded-xl shadow-lg ${
+            mobileMode ? 'px-3 py-2 max-w-[235px]' : 'px-4 py-3 max-w-sm'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <h1 className="font-display text-base sm:text-lg font-semibold text-stone-50 tracking-tight whitespace-nowrap">
+                Barkshire
+              </h1>
+              <span className="text-[11px] sm:text-xs text-stone-400 truncate">{hud.zoneName}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onToggleMobileMode}
+              title={mobileMode ? 'Switch to Desktop HUD' : 'Switch to Touch Joystick HUD'}
+              className={`p-1 rounded-md border transition-colors cursor-pointer shrink-0 ${
+                mobileMode
+                  ? 'bg-amber-500/20 border-amber-400/60 text-amber-300'
+                  : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-stone-100'
+              }`}
+            >
+              <Gamepad2 className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {/* Unboxed clean metadata row with typographic separators */}
@@ -143,7 +174,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
 
         {/* Transient Top-Center Notification / NPC Speech Banner */}
-        <div className="flex flex-col items-end gap-2 max-w-sm">
+        <div className={`flex flex-col items-end gap-2 max-w-xs sm:max-w-sm ${mobileMode ? 'mr-28' : ''}`}>
           {hud.notification && (
             <div className="bg-stone-950/90 border border-amber-500/40 rounded-lg px-4 py-2.5 shadow-lg text-right">
               <div className="text-xs font-semibold text-amber-300">{hud.notification.title}</div>
@@ -161,13 +192,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       </div>
 
-      {/* Bottom Area: Context Action Prompt + Unified Collapsible Bottom Control Dock */}
+      {/* Bottom Area: Desktop Dock (hidden when Touch Joystick MobileControls are active) */}
+      {!mobileMode && (
       <div className="flex flex-col items-center gap-2.5">
-        {/* Contextual Nearby Prompt (NPC Belly Rub or Hydrant Marking) */}
+        {/* Contextual Nearby Prompt (Store Door, NPC Belly Rub, or Hydrant Marking) */}
         {hud.nearbyPrompt && (
           <button
             type="button"
-            onClick={hud.nearbyPrompt.action === 'pet' ? onInteract : onPee}
+            onClick={hud.nearbyPrompt.action === 'pee_mark' ? onPee : onInteract}
             className="pointer-events-auto flex items-center gap-2.5 px-4 py-2 rounded-lg bg-stone-950/92 border border-amber-400/70 text-stone-100 shadow-lg hover:bg-stone-900 transition-colors cursor-pointer"
           >
             <span className="px-1.5 py-0.5 rounded bg-amber-400 text-stone-950 font-mono-num text-xs font-bold">
@@ -356,6 +388,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           )}
         </div>
       </div>
+      )}
     </div>
   );
 };

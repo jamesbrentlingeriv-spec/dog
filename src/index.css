@@ -17,6 +17,9 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
     font-family: var(--font-sans);
   }
 }

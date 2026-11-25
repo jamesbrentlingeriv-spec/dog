@@ -100,9 +100,8 @@ export class BarkshireGameEngine {
   private camYaw = 0.18;
   private camPitch = 0.24;
   private camDistance = 4.2;
-  private isDraggingCam = false;
-  private lastPointerX = 0;
-  private lastPointerY = 0;
+  private canvasPointers = new Map<number, { x: number; y: number }>();
+  private lastPinchDist = 0;
   private currentCamPos = new THREE.Vector3(-17, 2.4, -10);
   private currentLookAt = new THREE.Vector3(-18, 0.8, -14);
 
@@ -147,7 +146,7 @@ export class BarkshireGameEngine {
   private handleKeyUp: (e: KeyboardEvent) => void;
   private handlePointerDown: (e: PointerEvent) => void;
   private handlePointerMove: (e: PointerEvent) => void;
-  private handlePointerUp: () => void;
+  private handlePointerUp: (e: PointerEvent) => void;
   private handleWheel: (e: WheelEvent) => void;
   private handleResize: () => void;
   private handleContextLost: (e: Event) => void;
@@ -181,6 +180,7 @@ export class BarkshireGameEngine {
     this.renderer.domElement.style.display = 'block';
     this.renderer.domElement.style.width = '100%';
     this.renderer.domElement.style.height = '100%';
+    this.renderer.domElement.style.touchAction = 'none';
     container.appendChild(this.renderer.domElement);
 
     // 2. Scene + lightweight 1K HDRI IBL + 2K Tonemapped Sky Dome (saves ~400 MB VRAM vs 8K float HDR)
@@ -329,23 +329,46 @@ export class BarkshireGameEngine {
     this.handlePointerDown = (e: PointerEvent) => {
       if (e.target !== this.renderer.domElement) return;
       this.audio.unlock();
-      this.isDraggingCam = true;
-      this.lastPointerX = e.clientX;
-      this.lastPointerY = e.clientY;
+      try {
+        this.renderer.domElement.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignore synthetic events without active pointerId
+      }
+      this.canvasPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.canvasPointers.size === 2) {
+        const pts = Array.from(this.canvasPointers.values());
+        this.lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      }
     };
 
     this.handlePointerMove = (e: PointerEvent) => {
-      if (!this.isDraggingCam) return;
-      const dx = e.clientX - this.lastPointerX;
-      const dy = e.clientY - this.lastPointerY;
-      this.lastPointerX = e.clientX;
-      this.lastPointerY = e.clientY;
-      this.camYaw -= dx * 0.0055;
-      this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * 0.0045, -0.08, 1.05);
+      const prev = this.canvasPointers.get(e.pointerId);
+      if (!prev) return;
+      const dx = e.clientX - prev.x;
+      const dy = e.clientY - prev.y;
+      prev.x = e.clientX;
+      prev.y = e.clientY;
+
+      if (this.canvasPointers.size === 1) {
+        this.camYaw -= dx * 0.0055;
+        this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * 0.0045, -0.08, 1.05);
+      } else if (this.canvasPointers.size >= 2) {
+        const pts = Array.from(this.canvasPointers.values());
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        if (this.lastPinchDist > 0) {
+          const pinchDelta = this.lastPinchDist - dist;
+          const zoomScale = Math.max(0.004, this.camDistance * 0.0035);
+          this.camDistance = THREE.MathUtils.clamp(this.camDistance + pinchDelta * zoomScale, 0.55, 12.5);
+        }
+        this.lastPinchDist = dist;
+      }
     };
 
-    this.handlePointerUp = () => {
-      this.isDraggingCam = false;
+    this.handlePointerUp = (e: PointerEvent) => {
+      this.canvasPointers.delete(e.pointerId);
+      if (this.canvasPointers.size < 2) {
+        this.lastPinchDist = 0;
+      }
     };
 
     this.handleWheel = (e: WheelEvent) => {
